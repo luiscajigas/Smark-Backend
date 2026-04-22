@@ -1,5 +1,5 @@
-# Use Python 3.11 as base image
-FROM python:3.11-slim
+# Use Python 3.11-slim-bookworm as base image for better stability
+FROM python:3.11-slim-bookworm
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
@@ -7,7 +7,8 @@ ENV PYTHONUNBUFFERED 1
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
 # Install system dependencies (including Java for Spark)
-RUN apt-get update && \
+RUN mkdir -p /usr/share/man/man1 && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
     openjdk-17-jdk-headless \
     build-essential \
