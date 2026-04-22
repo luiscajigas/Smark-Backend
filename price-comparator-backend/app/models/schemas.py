@@ -27,3 +27,25 @@ class ProductResponse(ProductBase):
 
     class Config:
         from_attributes = True
+
+class TrackingCreate(BaseModel):
+    user_id: str
+    name: str
+    price: float
+    category: Optional[str] = None
+    url: str
+    source: str  # 'search' or 'purchase'
+
+class TrackingResponse(TrackingCreate):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class FavoriteProduct(BaseModel):
+    name: str
+    category: Optional[str] = None
+    price: float
+    url: str
+    count: Optional[int] = None
