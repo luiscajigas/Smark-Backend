@@ -85,6 +85,8 @@ class DataProcessor:
                     search_terms = set()
                     for w in query_words:
                         search_terms.add(w)
+                        if w == "celular" or w == "celulares":
+                            search_terms.update(["telefono", "telefonos", "movil", "moviles", "smartphone", "smartphones", "phone", "phones"])
                         if w.endswith('es'): search_terms.add(w[:-2])
                         elif w.endswith('s'): search_terms.add(w[:-1])
                         else: search_terms.add(w + 's')
@@ -104,15 +106,8 @@ class DataProcessor:
                     # we should probably still show it if the user wants "everything related",
                     # BUT "Reloj" is not "Celular".
                     # Let's be a bit more strict: name or brand must match.
-                    if not (name_match or brand_match):
-                        # Fallback to category only if name is very generic or short
-                        if not category_match:
-                            continue
-                        # If category matches but name doesn't, check if name is completely unrelated
-                        # (e.g. name "Reloj" vs query "Celulares")
-                        # This is tricky. Let's stick to name_match or brand_match for now.
-                        if not (name_match or brand_match):
-                            continue
+                    if not (name_match or brand_match or category_match):
+                        continue
 
                 processed.append({
                     "name": name,

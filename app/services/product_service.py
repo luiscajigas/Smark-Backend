@@ -7,21 +7,37 @@ from datetime import datetime, timedelta
 async def search_and_save_products(supabase: Client, query: str, user_id: str = None) -> List[dict]:
     # 1. Check Cache first (if we have fresh results in the last hour)
     one_hour_ago = (datetime.now() - timedelta(hours=1)).isoformat()
+    per_store_limit = 5
     try:
-        # We run the DB query in a way that doesn't block if possible, 
-        # but supabase-py is mostly synchronous. 
-        cached_response = supabase.table("products") \
-            .select("*") \
-            .ilike("name", f"%{query}%") \
-            .gt("created_at", one_hour_ago) \
-            .limit(100) \
-            .execute()
+        cached_data = []
+        try:
+            cached_response = supabase.rpc("search_products_cached", {
+                "q": query,
+                "since": one_hour_ago,
+                "limit_per_store": per_store_limit
+            }).execute()
+            cached_data = cached_response.data or []
+        except Exception:
+            query_norm = (query or "").strip().lower()
+            query_words = [w for w in query_norm.split() if len(w) > 2]
+            primary_term = query_words[0] if query_words else query_norm
+
+            for table_name in ["products_alkosto", "products_exito", "products_jumbo"]:
+                cached_response = supabase.table(table_name) \
+                    .select("*") \
+                    .ilike("name", f"%{primary_term}%") \
+                    .gt("created_at", one_hour_ago) \
+                    .order("created_at", desc=True) \
+                    .limit(per_store_limit) \
+                    .execute()
+                if cached_response.data:
+                    cached_data.extend(cached_response.data)
         
-        if cached_response.data and len(cached_response.data) >= 20:
-            print(f"Returning {len(cached_response.data)} cached results for: {query}")
+        if cached_data:
+            print(f"Returning {len(cached_data)} cached results for: {query}")
             # If user_id is provided, track this search by saving the first result as a 'search' record
-            if user_id and cached_response.data:
-                first_prod = cached_response.data[0]
+            if user_id and cached_data:
+                first_prod = cached_data[0]
                 track_activity(supabase, {
                     "user_id": user_id,
                     "name": first_prod.get("name"),
@@ -30,7 +46,7 @@ async def search_and_save_products(supabase: Client, query: str, user_id: str = 
                     "url": first_prod.get("url"),
                     "source": "search"
                 })
-            return cached_response.data
+            return cached_data
     except Exception as e:
         print(f"Cache check failed: {e}")
 
@@ -49,9 +65,15 @@ async def search_and_save_products(supabase: Client, query: str, user_id: str = 
             processed_batch = processor.process_data(spider_results, query)
             
             if processed_batch:
+                source = processed_batch[0].get("source", "").lower()
+                table_name = "products_alkosto" # fallback
+                if source == "alkosto": table_name = "products_alkosto"
+                elif source == "exito": table_name = "products_exito"
+                elif source == "jumbo": table_name = "products_jumbo"
+
                 try:
                     # Save this batch to Supabase immediately
-                    response = supabase.table("products").insert(processed_batch).execute()
+                    response = supabase.table(table_name).insert(processed_batch).execute()
                     all_processed_results.extend(response.data)
                 except Exception as e:
                     print(f"Incremental insert failed, retrying with base columns: {e}")
@@ -59,7 +81,7 @@ async def search_and_save_products(supabase: Client, query: str, user_id: str = 
                     for item in processed_batch:
                         clean_item = {k: v for k, v in item.items() if k in base_columns}
                         clean_batch.append(clean_item)
-                    response = supabase.table("products").insert(clean_batch).execute()
+                    response = supabase.table(table_name).insert(clean_batch).execute()
                     all_processed_results.extend(response.data)
         
         # Track search if user_id is provided
@@ -160,20 +182,34 @@ def get_user_favorites(supabase: Client, user_id: str, limit: int = 10) -> List[
 
 def get_products(supabase: Client, skip: int = 0, limit: int = 100, query: str = None):
     # Base query
-    db_query = supabase.table("products").select("*").order("created_at", desc=True)
+    all_data = []
+    limit_per_table = limit // 3 or 1
+    for table_name in ["products_alkosto", "products_exito", "products_jumbo"]:
+        db_query = supabase.table(table_name).select("*").order("created_at", desc=True)
+        if query:
+            db_query = db_query.ilike("name", f"%{query}%")
+        response = db_query.range(skip, skip + limit_per_table - 1).execute()
+        if response.data:
+            all_data.extend(response.data)
     
-    # If a filter query is provided, search by name
-    if query:
-        db_query = db_query.ilike("name", f"%{query}%")
-        
-    response = db_query.range(skip, skip + limit - 1).execute()
-    return response.data
+    all_data.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    return all_data
 
 def delete_all_products(supabase: Client):
     # This deletes all records where name is not null (effectively all)
-    response = supabase.table("products").delete().neq("name", "").execute()
-    return response.data
+    total_deleted = []
+    for table_name in ["products_alkosto", "products_exito", "products_jumbo"]:
+        response = supabase.table(table_name).delete().neq("name", "").execute()
+        if response.data:
+            total_deleted.extend(response.data)
+    return total_deleted
 
 def get_product_by_id(supabase: Client, product_id: int):
-    response = supabase.table("products").select("*").eq("id", product_id).single().execute()
-    return response.data
+    for table_name in ["products_alkosto", "products_exito", "products_jumbo"]:
+        try:
+            response = supabase.table(table_name).select("*").eq("id", product_id).single().execute()
+            if response.data:
+                return response.data
+        except Exception:
+            continue
+    return None

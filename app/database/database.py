@@ -1,17 +1,30 @@
 from supabase import create_client, Client
-from pydantic_settings import BaseSettings
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
-class Settings(BaseSettings):
-    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
-    SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
+_supabase_client: Client | None = None
+_supabase_url: str | None = None
+_supabase_key: str | None = None
 
-settings = Settings()
+def _read_env() -> tuple[str, str]:
+    url = os.getenv("SUPABASE_URL", "")
+    key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY", "")
+    return url, key
 
-supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+def _get_client() -> Client:
+    global _supabase_client, _supabase_url, _supabase_key
+    current_url, current_key = _read_env()
+    if (
+        _supabase_client is None
+        or _supabase_url != current_url
+        or _supabase_key != current_key
+    ):
+        _supabase_url = current_url
+        _supabase_key = current_key
+        _supabase_client = create_client(_supabase_url, _supabase_key)
+    return _supabase_client
 
 def get_supabase():
-    return supabase
+    return _get_client()

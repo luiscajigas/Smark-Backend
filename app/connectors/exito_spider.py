@@ -1,12 +1,12 @@
 import httpx
 from typing import List
 
-async def search_product(query: str) -> List[dict]:
+async def search_product(query: str, limit: int = 5) -> List[dict]:
     """
     Search products using Exito's VTEX API for more reliable and faster results.
     """
     # VTEX API allows fetching up to 50 products per request
-    url = f"https://www.exito.com/api/catalog_system/pub/products/search?ft={query}&_from=0&_to=49"
+    url = f"https://www.exito.com/api/catalog_system/pub/products/search?ft={query}&_from=0&_to={max(limit - 1, 0)}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json",
@@ -19,6 +19,8 @@ async def search_product(query: str) -> List[dict]:
             if response.status_code in [200, 206]:
                 products = response.json()
                 for p in products:
+                    if len(results) >= limit:
+                        break
                     # Extract the first SKU/item
                     items = p.get("items", [])
                     if not items:

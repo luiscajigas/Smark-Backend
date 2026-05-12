@@ -2,7 +2,7 @@ import httpx
 import json
 from typing import List
 
-async def search_product(query: str) -> List[dict]:
+async def search_product(query: str, limit: int = 5) -> List[dict]:
     """
     Search products using Alkosto's Algolia API for reliable results.
     """
@@ -20,7 +20,7 @@ async def search_product(query: str) -> List[dict]:
     
     # Payload for Algolia search
     payload = {
-        "params": f"query={query}&hitsPerPage=50&clickAnalytics=true"
+        "params": f"query={query}&hitsPerPage={limit}&clickAnalytics=true"
     }
     
     results = []
@@ -70,4 +70,4 @@ async def search_product(query: str) -> List[dict]:
     except Exception as e:
         print(f"Alkosto Algolia error: {e}")
         
-    return results
+    return results[:limit]
