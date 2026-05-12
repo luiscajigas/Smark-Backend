@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from supabase import Client
 from typing import List
 from app.database.database import get_supabase
-from app.models.schemas import ProductResponse, TrackingCreate, FavoriteProduct
+from app.models.schemas import ProductResponse, TrackingCreate, FavoriteProduct, RecommendationResponse
 from app.services.product_service import (
     search_and_save_products, 
     get_products, 
@@ -10,6 +10,7 @@ from app.services.product_service import (
     track_activity,
     get_user_favorites
 )
+from app.services.recommendation_service import get_ai_recommendations
 
 router = APIRouter()
 
@@ -70,3 +71,21 @@ def read_product(product_id: int, supabase: Client = Depends(get_supabase)):
         return db_product
     except Exception:
         raise HTTPException(status_code=404, detail="Product not found")
+
+@router.get("/recommendations", response_model=RecommendationResponse)
+async def get_recommendations(
+    q: str = Query(..., min_length=1),
+    user_id: str = Query(None),
+    monthly_budget: float = Query(None),
+    supabase: Client = Depends(get_supabase),
+):
+    try:
+        data = await get_ai_recommendations(
+            supabase=supabase,
+            query=q,
+            user_id=user_id,
+            monthly_budget=monthly_budget,
+        )
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating recommendations: {str(e)}")

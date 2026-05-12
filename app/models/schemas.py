@@ -49,3 +49,25 @@ class FavoriteProduct(BaseModel):
     price: float
     url: str
     count: Optional[int] = None
+
+class RecommendationRequest(BaseModel):
+    q: str
+    user_id: Optional[str] = None
+    monthly_budget: Optional[float] = None
+
+class RecommendationOffer(BaseModel):
+    store: str
+    name: Optional[str] = None
+    price: float
+    url: Optional[str] = None
+
+class RecommendationResponse(BaseModel):
+    query: str
+    best_store: Optional[str] = None
+    projected_savings: float
+    monthly_budget: Optional[float] = None
+    budget_impact_percent: Optional[float] = None
+    offers: List[RecommendationOffer]
+    consumption: dict
+    ai: Optional[dict] = None
+    ai_error: Optional[str] = None

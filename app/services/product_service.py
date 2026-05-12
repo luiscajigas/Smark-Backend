@@ -3,6 +3,60 @@ from app.services.scraper_service import get_all_products_stream
 from app.spark.processor import DataProcessor
 from typing import List
 from datetime import datetime, timedelta
+import re
+
+def _normalize_text(text: str) -> str:
+    if not text:
+        return ""
+    text = text.lower()
+    replacements = {
+        "á": "a",
+        "é": "e",
+        "í": "i",
+        "ó": "o",
+        "ú": "u",
+        "ü": "u",
+        "ñ": "n",
+        "ý": "y",
+    }
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+    return re.sub(r"[^\w\s]", " ", text)
+
+def _query_tokens(query: str) -> List[str]:
+    qn = _normalize_text(query or "")
+    raw = [w for w in qn.split() if w]
+    tokens = []
+    for w in raw:
+        if w.isdigit() and len(w) >= 2:
+            tokens.append(w)
+        elif len(w) >= 3:
+            tokens.append(w)
+    return tokens[:8]
+
+def _filter_rows_by_tokens(rows: List[dict], tokens: List[str]) -> List[dict]:
+    if not tokens:
+        return rows
+    filtered = []
+    for r in rows:
+        hay = " ".join([
+            _normalize_text(str(r.get("name", ""))),
+            _normalize_text(str(r.get("brand", ""))),
+            _normalize_text(str(r.get("category", ""))),
+        ])
+        if all(t in hay for t in tokens):
+            filtered.append(r)
+    return filtered
+
+def _limit_rows_per_store(rows: List[dict], per_store_limit: int) -> List[dict]:
+    out: List[dict] = []
+    counts = {}
+    for r in rows:
+        store = (r.get("source") or "Unknown").strip() or "Unknown"
+        counts[store] = counts.get(store, 0) + 1
+        if counts[store] <= per_store_limit:
+            out.append(r)
+    return out
 
 async def search_and_save_products(supabase: Client, query: str, user_id: str = None) -> List[dict]:
     # 1. Check Cache first (if we have fresh results in the last hour)
@@ -10,6 +64,7 @@ async def search_and_save_products(supabase: Client, query: str, user_id: str = 
     per_store_limit = 5
     try:
         cached_data = []
+        tokens = _query_tokens(query)
         try:
             cached_response = supabase.rpc("search_products_cached", {
                 "q": query,
@@ -18,20 +73,19 @@ async def search_and_save_products(supabase: Client, query: str, user_id: str = 
             }).execute()
             cached_data = cached_response.data or []
         except Exception:
-            query_norm = (query or "").strip().lower()
-            query_words = [w for w in query_norm.split() if len(w) > 2]
-            primary_term = query_words[0] if query_words else query_norm
-
             for table_name in ["products_alkosto", "products_exito", "products_jumbo"]:
                 cached_response = supabase.table(table_name) \
                     .select("*") \
-                    .ilike("name", f"%{primary_term}%") \
                     .gt("created_at", one_hour_ago) \
                     .order("created_at", desc=True) \
-                    .limit(per_store_limit) \
+                    .limit(120) \
                     .execute()
                 if cached_response.data:
                     cached_data.extend(cached_response.data)
+
+        cached_data = _filter_rows_by_tokens(cached_data, tokens)
+        cached_data.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        cached_data = _limit_rows_per_store(cached_data, per_store_limit)
         
         if cached_data:
             print(f"Returning {len(cached_data)} cached results for: {query}")
