@@ -2,7 +2,7 @@ from supabase import create_client, Client
 import os
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+load_dotenv()
 
 _supabase_client: Client | None = None
 _supabase_url: str | None = None
